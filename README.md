@@ -1,6 +1,6 @@
 # 3-Body Problem Simulator
 
-An interactive, browser-based simulation of the **three-body problem** with realistic astrophysical units and dynamic visualisation. WORKS BEST ON PC
+An interactive, browser-based simulation of the **three-body problem** with realistic astrophysical units and dynamic visualisation. WORKS BEST ON PC OR LANDSCAPE MODE ON PHONE
 
 **Live demo:** https://adilneaz.github.io/3-Body-simulator-/
 
