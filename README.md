@@ -1,5 +1,4 @@
 # 3-Body Problem Simulator
-![Simulator Screenshot](screenshot.png)
 
 An interactive, browser-based simulation of the **three-body problem** with realistic astrophysical units and dynamic visualisation.
 
