@@ -1,0 +1,508 @@
+<!--
+3-Body Problem Simulator
+MIT License © 2025 Adil Neaz
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Interactive 3-Body Simulator (AU · M☉ · km/s)</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#0e1630; --ink:#cfd8e3; --muted:#94a3b8; --line:#1f2942;
+      --accent:#60a5fa; --accent2:#5eead4; --accent3:#f59e0b; --danger:#f87171;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#0a1022,#0a1328);color:var(--ink);font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    .app{display:flex;gap:16px;padding:16px;max-width:1400px;margin:0 auto}
+    /* Canvas + HUD */
+    .stage{position:relative;flex:1;min-height:720px;background:#070e1f;border:2px solid #12203f;border-radius:14px;overflow:hidden}
+    canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+    .hud{position:absolute;left:12px;top:12px;display:flex;gap:8px;flex-wrap:wrap;z-index:5}
+    .btn{background:var(--accent);border:none;color:#041627;padding:8px 10px;border-radius:8px;font-weight:700;cursor:pointer}
+    .btn.secondary{background:transparent;border:1px solid #2a3a64;color:var(--ink)}
+    .btn.warn{background:var(--danger);color:#190707}
+    .panel{width:380px;background:var(--panel);border:1px solid #1a2442;border-radius:14px;padding:14px}
+    h2{margin:0 0 10px 0;font-size:18px}
+    .row{display:flex;align-items:center;gap:8px;margin:8px 0}
+    label{font-size:12px;color:var(--muted)}
+    input[type=range]{width:100%}
+    input[type=number]{width:100%;background:#0a142c;border:1px solid #203158;color:var(--ink);padding:6px;border-radius:8px}
+    select{width:100%;background:#0a142c;border:1px solid #203158;color:var(--ink);padding:6px;border-radius:8px}
+    .card{background:#0a142c;border:1px solid #203158;border-radius:12px;padding:10px}
+    .small{font-size:12px;color:var(--muted)}
+    .note{font-size:12px;color:#94d0ff}
+    /* Help drawer */
+    .helpTab{position:absolute;right:12px;top:12px;z-index:6}
+    .helpBtn{background:#172342;color:#cfe3ff;border:1px solid #28406d;border-radius:999px;padding:8px 10px;cursor:pointer;font-weight:700}
+    .drawer{position:absolute;top:0;right:0;height:100%;width:0;overflow:hidden;background:#0c1530;border-left:1px solid #22325a;transition:width .28s ease;z-index:7}
+    .drawer.open{width:380px}
+    .drawer > .inner{padding:16px}
+    .drawer h3{margin:0 0 8px 0}
+    .drawer p{margin:6px 0;color:var(--ink);font-size:14px}
+    .credit{margin-top:10px;color:var(--muted);font-size:12px}
+    /* Floating legend */
+    .legend{position:absolute;left:16px;bottom:16px;background:#e5e7eb;color:#0b1020;border:1px solid #000;border-radius:10px;padding:8px 10px;width:220px;cursor:move;user-select:none;z-index:6}
+    .legend .bar{height:10px;border:1px solid #000;border-radius:6px;margin:6px 0;position:relative}
+    .legend .labels{display:flex;justify-content:space-between;font-size:11px}
+    .legend .dots{position:absolute;inset:0;pointer-events:none}
+    .legend .dot{position:absolute;top:-3px;width:6px;height:16px;background:#111;border-radius:2px}
+    /* Presets row */
+    .presets{display:flex;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="stage" id="stage">
+      <div class="hud">
+        <button class="btn" id="startBtn">Start</button>
+        <button class="btn secondary" id="pauseBtn">Pause</button>
+        <button class="btn secondary" id="resetBtn">Reset</button>
+      </div>
+      <canvas id="sim"></canvas>
+      <div class="helpTab"><button id="helpBtn" class="helpBtn">?</button></div>
+      <div id="drawer" class="drawer">
+        <div class="inner">
+          <h3>What do these terms mean?</h3>
+          <p><b>AU (astronomical unit)</b>: average Earth–Sun distance, 1 AU ≈ 1.496×10<sup>11</sup> m.</p>
+          <p><b>M☉ (solar mass)</b>: mass of the Sun, 1 M☉ ≈ 1.988×10<sup>30</sup> kg.</p>
+          <p><b>km/s</b>: kilometres per second for velocities (1 km/s = 1000 m/s).</p>
+          <p><b>X, Y position</b>: coordinates in the simulation plane measured in AU from the origin (the canvas centre by default).
+          Positive X is right, positive Y is up.</p>
+          <p><b>Time speed</b>: how many <i>days of simulated time per real second</i> the integrator advances.</p>
+          <p><b>Trails</b>: fading paths of recent positions. Trail fade adapts to zoom so the view stays clear.</p>
+          <p><b>Zoom & pan</b>: use your mouse wheel to zoom (centred on the pointer). Drag empty space to pan the camera.</p>
+          <p class="credit">Made by <b>Adil Neaz</b>. Simulation uses realistic gravity (G = 6.674×10⁻¹¹ SI) with AU/M☉/km·s⁻¹ units in the UI.</p>
+          <div class="row"><button id="closeHelp" class="btn" style="width:100%">Close & Resume</button></div>
+        </div>
+      </div>
+      <div class="legend" id="legend">
+        <div class="labels"><span>Slow</span><span>Fast</span></div>
+        <div class="bar"><canvas id="legendBar" width="190" height="10"></canvas><div class="dots" id="legendDots"></div></div>
+        <div class="labels"><span id="vMinLbl">–</span><span id="vMaxLbl">–</span></div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <h2>3-Body Controls</h2>
+      <div class="small">Units: distance in <b>AU</b>, mass in <b>M☉</b>, velocity in <b>km/s</b>. Click in the space to select/place a body, then drag to set its velocity vector. Use presets to start quickly.</div>
+
+      <div class="card" style="margin-top:10px">
+        <div class="row"><label style="width:140px">Time speed (days/s)</label><input id="timeSpeed" type="range" min="0.01" max="50" step="0.01" value="2"></div>
+        <div class="row"><label style="width:140px">Trail density</label><input id="trailLen" type="range" min="100" max="4000" step="50" value="1500"></div>
+        <div class="row"><label style="width:140px">Zoom (wheel)</label><span class="small">Scroll to zoom, drag background to pan</span></div>
+      </div>
+
+      <div class="card" style="margin-top:10px">
+        <div class="row">
+          <label style="width:100px">Active body</label>
+          <select id="active">
+            <option value="0">Body 1</option>
+            <option value="1">Body 2</option>
+            <option value="2">Body 3</option>
+          </select>
+        </div>
+        <div class="row"><label style="width:100px">Mass (M☉)</label><input id="mass" type="number" step="0.001" value="1.000"></div>
+        <div class="row"><label style="width:100px">Pos X (AU)</label><input id="px" type="number" step="0.001" value="-1.0"></div>
+        <div class="row"><label style="width:100px">Pos Y (AU)</label><input id="py" type="number" step="0.001" value="0.0"></div>
+        <div class="row"><label style="width:100px">Vx (km/s)</label><input id="vx" type="number" step="0.1" value="0.0"></div>
+        <div class="row"><label style="width:100px">Vy (km/s)</label><input id="vy" type="number" step="0.1" value="30.0"></div>
+        <div class="row"><button id="apply" class="btn secondary" style="flex:1">Apply to Active</button></div>
+      </div>
+
+      <div class="card" style="margin-top:10px">
+        <div class="presets">
+          <button id="presetSunEarthJupiter" class="btn secondary">Preset: Sun-Earth-Jupiter</button>
+          <button id="presetBinaryProbe" class="btn secondary">Preset: Binary + Probe</button>
+          <button id="presetFigure8" class="btn secondary">Preset: Figure-8 (approx)</button>
+        </div>
+      </div>
+
+      <div class="small note" style="margin-top:8px">Tip: Click on a body to select it. Click empty space to move the active body there; drag to set its initial velocity vector (scaled to km/s). Trails change colour with speed (blue→red) and fade with zoom.</div>
+    </aside>
+  </div>
+
+<script>
+// ===== Constants & utilities =====
+const AU = 1.495978707e11;            // m
+const MSUN = 1.98847e30;              // kg
+const G = 6.67430e-11;                // m^3 kg^-1 s^-2
+const KM = 1000;
+const DAY = 86400;                     // s
+
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+
+function resize(){
+  canvas.width = stage.clientWidth * devicePixelRatio;
+  canvas.height = stage.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+// Camera / world scaling
+let zoom = 140; // pixels per AU (view scale). Smaller = zoomed out
+let cam = {x:0, y:0}; // camera offset in AU
+let draggingCam = false; let lastMouse = null;
+
+// Time control
+let running = false;
+let daysPerSecond = parseFloat(document.getElementById('timeSpeed').value); // UI slider
+let fixedDt = DAY/60; // base integrator step (s) ~ 60 steps per sim-day at 1 day/s
+
+// Bodies
+function makeBody({xAU,yAU,vxKMS,vyKMS,mMsun,color}){
+  return {
+    x: xAU*AU, y: yAU*AU,
+    vx: vxKMS*KM, vy: vyKMS*KM,
+    m: mMsun*MSUN,
+    color,
+    trail: [] // array of {x,y,age}
+  }
+}
+
+let bodies = [];
+
+// Physics helpers
+function accFor(bi, bj){
+  const dx = bj.x - bi.x; const dy = bj.y - bi.y;
+  const r2 = dx*dx + dy*dy + 1e6; // softening to avoid /0 (1 km^2)
+  const r = Math.sqrt(r2);
+  const a = G * bj.m / r2;
+  const ux = dx / r, uy = dy / r;
+  return [a*ux, a*uy];
+}
+
+function rk4Step(dt){
+  const n = bodies.length;
+  // snapshot
+  const s0 = bodies.map(b=>({x:b.x,y:b.y,vx:b.vx,vy:b.vy,m:b.m}));
+  function deriv(state){
+    const ax = Array.from({length:n},()=>0);
+    const ay = Array.from({length:n},()=>0);
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        const dx = state[j].x - state[i].x; const dy = state[j].y - state[i].y;
+        const r2 = dx*dx + dy*dy + 1e6; const r = Math.sqrt(r2);
+        const aij = G*state[j].m / r2; const aji = G*state[i].m / r2;
+        const ux = dx/r, uy = dy/r;
+        ax[i] += aij*ux; ay[i] += aij*uy;
+        ax[j] -= aji*ux; ay[j] -= aji*uy;
+      }
+    }
+    return {ax,ay};
+  }
+  const k1 = deriv(s0);
+  const s1 = s0.map((b,i)=>({x:b.x + b.vx*dt/2, y:b.y + b.vy*dt/2, vx:b.vx + k1.ax[i]*dt/2, vy:b.vy + k1.ay[i]*dt/2, m:b.m}));
+  const k2 = deriv(s1);
+  const s2 = s0.map((b,i)=>({x:b.x + (b.vx + k1.ax[i]*dt/2)*dt/2, y:b.y + (b.vy + k1.ay[i]*dt/2)*dt/2, vx:b.vx + k2.ax[i]*dt/2, vy:b.vy + k2.ay[i]*dt/2, m:b.m}));
+  const k3 = deriv(s2);
+  const s3 = s0.map((b,i)=>({x:b.x + (b.vx + k2.ax[i]*dt)*dt, y:b.y + (b.vy + k2.ay[i]*dt)*dt, vx:b.vx + k3.ax[i]*dt, vy:b.vy + k3.ay[i]*dt, m:b.m}));
+  const k4 = deriv(s3);
+  for(let i=0;i<n;i++){
+    const b = bodies[i];
+    b.x  += dt*(b.vx + ( (k1.ax[i] + 2*k2.ax[i] + 2*k3.ax[i] + k4.ax[i]) * dt )/6);
+    b.y  += dt*(b.vy + ( (k1.ay[i] + 2*k2.ay[i] + 2*k3.ay[i] + k4.ay[i]) * dt )/6);
+    b.vx += dt*(k1.ax[i] + 2*k2.ax[i] + 2*k3.ax[i] + k4.ax[i]) / 6;
+    b.vy += dt*(k1.ay[i] + 2*k2.ay[i] + 2*k3.ay[i] + k4.ay[i]) / 6;
+    // trail
+    b.trail.push({x:b.x,y:b.y,age:0});
+    const maxTrail = parseInt(document.getElementById('trailLen').value);
+    while(b.trail.length>maxTrail) b.trail.shift();
+    // age trails
+    b.trail.forEach(p=>p.age+=dt);
+  }
+}
+
+// Colors: speed→color using dynamic log scale (blue→green→yellow→red)
+function lerp(a,b,t){return a+(b-a)*t}
+function speedToColor(norm){
+  // norm in [0,1]
+  // segments: 0..0.33 (blue->green), 0.33..0.66 (green->yellow), 0.66..1 (yellow->red)
+  let r=0,g=0,b=0;
+  if(norm<0.33){ // blue -> green
+    const t=norm/0.33; r=0; g=lerp(80,255,t); b=lerp(255,60,t);
+  } else if(norm<0.66){ // green -> yellow
+    const t=(norm-0.33)/0.33; r=lerp(60,255,t); g=255; b=60;
+  } else { // yellow -> red
+    const t=(norm-0.66)/0.34; r=255; g=lerp(255,60,t); b=60;
+  }
+  return `rgba(${r|0},${g|0},${b|0},1)`;
+}
+
+function computeSpeedRange(){
+  let min=Infinity, max=0;
+  for(const b of bodies){
+    const v = Math.hypot(b.vx,b.vy);
+    if(v<min) min=v; if(v>max) max=v;
+  }
+  if(!isFinite(min)||min<=0) min = 1; // 1 m/s floor
+  if(max<=min) max = min*2;
+  return {min,max};
+}
+function normLog(v,min,max){
+  const lv = Math.log(v), lmin=Math.log(min), lmax=Math.log(max);
+  return Math.min(1, Math.max(0, (lv-lmin)/(lmax-lmin)));
+}
+
+// Rendering
+function worldToScreen(xAU,yAU){
+  const cx = canvas.clientWidth/2; const cy = canvas.clientHeight/2;
+  return [ cx + (xAU - cam.x)*zoom, cy - (yAU - cam.y)*zoom ];
+}
+function screenToWorld(px,py){
+  const cx = canvas.clientWidth/2; const cy = canvas.clientHeight/2;
+  return [ (px - cx)/zoom + cam.x, -(py - cy)/zoom + cam.y ];
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);
+
+  // background stars grid (subtle)
+  ctx.strokeStyle = '#0f1a35'; ctx.lineWidth=1;
+  ctx.beginPath();
+  const step = 1; // AU grid spacing
+  const left = cam.x - canvas.clientWidth/(2*zoom);
+  const right = cam.x + canvas.clientWidth/(2*zoom);
+  const topw = cam.y + canvas.clientHeight/(2*zoom);
+  const bot = cam.y - canvas.clientHeight/(2*zoom);
+  const startX = Math.floor(left/step)*step; const endX = Math.ceil(right/step)*step;
+  for(let x=startX;x<=endX;x+=step){
+    const p1 = worldToScreen(x, bot); const p2 = worldToScreen(x, topw);
+    ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]);
+  }
+  const startY = Math.floor(bot/step)*step; const endY = Math.ceil(topw/step)*step;
+  for(let y=startY;y<=endY;y+=step){
+    const p1 = worldToScreen(left, y); const p2 = worldToScreen(right, y);
+    ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]);
+  }
+  ctx.stroke();
+
+  // dynamic speed range
+  const {min:minV,max:maxV} = computeSpeedRange();
+
+  // draw trails (fade with age + zoom)
+  const fadeBase = 50*DAY; // seconds to fade at zoom=100 px/AU
+  const fade = fadeBase * (zoom/100); // fade faster when zoomed out
+  ctx.lineWidth = 2;
+  for(const b of bodies){
+    if(b.trail.length<2) continue;
+    ctx.beginPath();
+    for(let i=0;i<b.trail.length;i++){
+      const p = b.trail[i];
+      const [sx,sy] = worldToScreen(p.x/AU,p.y/AU);
+      if(i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+    }
+    // color by current speed
+    const v = Math.hypot(b.vx,b.vy); const t = normLog(v,minV,maxV);
+    ctx.strokeStyle = speedToColor(t);
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // draw bodies
+  for(const b of bodies){
+    const [sx,sy] = worldToScreen(b.x/AU, b.y/AU);
+    ctx.beginPath();
+    // radius scales with cube-root of mass, but clamp for visibility
+    const r = Math.max(3, Math.min(10, 4 + Math.cbrt(b.m/MSUN)));
+    ctx.fillStyle = b.color; ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// Legend drawing & dragging
+const legend = document.getElementById('legend');
+const legendBar = document.getElementById('legendBar');
+const legendCtx = legendBar.getContext('2d');
+const legendDots = document.getElementById('legendDots');
+let legendDrag = false; let legendOffset=[0,0];
+legend.addEventListener('mousedown', (e)=>{ legendDrag=true; legendOffset=[e.offsetX,e.offsetY]; });
+window.addEventListener('mouseup', ()=> legendDrag=false);
+window.addEventListener('mousemove', (e)=>{
+  if(legendDrag){ legend.style.left = (e.clientX - legendOffset[0]) + 'px'; legend.style.top = (e.clientY - legendOffset[1]) + 'px'; }
+});
+
+function renderLegend(){
+  // gradient
+  const grd = legendCtx.createLinearGradient(0,0,legendBar.width,0);
+  grd.addColorStop(0,'#3b82f6'); // blue
+  grd.addColorStop(0.33,'#22c55e'); // green
+  grd.addColorStop(0.66,'#f59e0b'); // yellow
+  grd.addColorStop(1,'#ef4444'); // red
+  legendCtx.fillStyle = grd; legendCtx.fillRect(0,0,legendBar.width,legendBar.height);
+  // dots for each body at their current log-normalised speed
+  legendDots.innerHTML='';
+  const {min:minV,max:maxV} = computeSpeedRange();
+  const vMinLbl = document.getElementById('vMinLbl');
+  const vMaxLbl = document.getElementById('vMaxLbl');
+  vMinLbl.textContent = fmtSpeed(minV);
+  vMaxLbl.textContent = fmtSpeed(maxV);
+  for(const b of bodies){
+    const v = Math.hypot(b.vx,b.vy);
+    const t = normLog(v,minV,maxV);
+    const x = Math.max(0, Math.min(1, t)) * legendBar.width;
+    const dot = document.createElement('div');
+    dot.className='dot'; dot.style.left = (legendBar.getBoundingClientRect().left + x - legend.getBoundingClientRect().left - 3) + 'px';
+    dot.style.background = b.color;
+    legendDots.appendChild(dot);
+  }
+}
+function fmtSpeed(v){ // v in m/s → km/s with sci notation
+  const kms = v/1000; // km/s
+  if(kms<0.01) return (kms.toExponential(2))+" km/s";
+  return kms.toFixed(2)+" km/s";
+}
+
+// Interaction: select/place bodies, drag set velocity
+let active = 0; let draggingBody = false; let placingVel = false; let dragStartWorld = null;
+const activeSel = document.getElementById('active');
+activeSel.addEventListener('change', ()=>{ active = parseInt(activeSel.value); syncInputs(); });
+
+canvas.addEventListener('mousedown', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const [wx,wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  // check if clicked near a body
+  let found=-1; for(let i=0;i<bodies.length;i++){
+    const dx = wx*AU - bodies[i].x; const dy = wy*AU - bodies[i].y; if(Math.hypot(dx,dy) < 0.05*AU) {found=i;break;}
+  }
+  if(found>=0){ active = found; activeSel.value = found; syncInputs(); placingVel = true; dragStartWorld = [wx,wy]; }
+  else{ // move active body
+    bodies[active].x = wx*AU; bodies[active].y = wy*AU; bodies[active].vx = 0; bodies[active].vy = 0; bodies[active].trail=[]; syncInputs(); placingVel = true; dragStartWorld=[wx,wy]; }
+});
+canvas.addEventListener('mousemove', (e)=>{
+  if(placingVel){ /* could draw a temp arrow if desired */ }
+});
+canvas.addEventListener('mouseup', (e)=>{
+  if(placingVel){
+    const rect = canvas.getBoundingClientRect();
+    const [wx,wy] = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const dx = (wx - dragStartWorld[0]);
+    const dy = (wy - dragStartWorld[1]);
+    // scale drag in AU to velocity in km/s
+    const scale = 20; // user feel scaling
+    bodies[active].vx = (dx*AU) / 1 * (scale); // m/s? We'll convert: dx AU * scale m/s per AU
+    bodies[active].vy = (dy*AU) / 1 * (scale);
+    // Convert to reasonable km/s range by clamping
+    const vmax = 80*KM*1000; // 80,000 km/s cap (well above typical)
+    const vmag = Math.hypot(bodies[active].vx,bodies[active].vy);
+    if(vmag>vmax){ const s=vmax/vmag; bodies[active].vx*=s; bodies[active].vy*=s; }
+    syncInputs();
+  }
+  placingVel=false; dragStartWorld=null;
+});
+
+// Pan with right-click drag or hold space
+let panning=false;
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+canvas.addEventListener('mousedown',(e)=>{ if(e.button===2){ panning=true; lastMouse=[e.clientX,e.clientY]; }});
+window.addEventListener('mouseup',()=>{ panning=false; });
+window.addEventListener('mousemove',(e)=>{
+  if(panning){ const dx = (e.clientX - lastMouse[0])/zoom; const dy = (e.clientY - lastMouse[1])/zoom; cam.x -= dx; cam.y += dy; lastMouse=[e.clientX,e.clientY]; }
+});
+
+// Wheel zoom towards pointer
+canvas.addEventListener('wheel',(e)=>{
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+  const [wx,wy] = screenToWorld(mx,my);
+  const oldZoom = zoom;
+  const factor = Math.exp(-e.deltaY * 0.0015);
+  zoom = Math.min(600, Math.max(20, zoom*factor));
+  // keep point under cursor stable
+  const [nx,ny] = screenToWorld(mx,my);
+  cam.x += (wx-nx); cam.y += (wy-ny);
+},{passive:false});
+
+// UI controls
+function syncInputs(){
+  const b = bodies[active];
+  document.getElementById('mass').value = (b.m/MSUN).toFixed(3);
+  document.getElementById('px').value = (b.x/AU).toFixed(3);
+  document.getElementById('py').value = (b.y/AU).toFixed(3);
+  document.getElementById('vx').value = (b.vx/KM).toFixed(2);
+  document.getElementById('vy').value = (b.vy/KM).toFixed(2);
+}
+
+function applyActive(){
+  const b = bodies[active];
+  b.m = Math.max(1e-6, parseFloat(document.getElementById('mass').value))*MSUN;
+  b.x = parseFloat(document.getElementById('px').value)*AU;
+  b.y = parseFloat(document.getElementById('py').value)*AU;
+  b.vx = parseFloat(document.getElementById('vx').value)*KM;
+  b.vy = parseFloat(document.getElementById('vy').value)*KM;
+  b.trail=[];
+}
+
+document.getElementById('apply').addEventListener('click', applyActive);
+document.getElementById('timeSpeed').addEventListener('input', (e)=>{ daysPerSecond = parseFloat(e.target.value); });
+document.getElementById('trailLen').addEventListener('input', ()=>{});
+
+document.getElementById('startBtn').addEventListener('click', ()=> running=true );
+document.getElementById('pauseBtn').addEventListener('click', ()=> running=false );
+document.getElementById('resetBtn').addEventListener('click', ()=> { presets.sunEarthJupiter(); running=false; cam={x:0,y:0}; zoom=140; });
+
+// Help drawer pauses/resumes
+const drawer = document.getElementById('drawer');
+const helpBtn = document.getElementById('helpBtn');
+const closeHelp = document.getElementById('closeHelp');
+let wasRunning=false;
+helpBtn.addEventListener('click', ()=>{ wasRunning = running; running=false; drawer.classList.add('open'); });
+closeHelp.addEventListener('click', ()=>{ drawer.classList.remove('open'); running = wasRunning; });
+
+// Presets
+const presets = {
+  sunEarthJupiter(){
+    bodies = [
+      makeBody({xAU:0,yAU:0,vxKMS:0,vyKMS:0,mMsun:1,color:'#f8d66d'}), // Sun
+      makeBody({xAU:1,yAU:0,vxKMS:0,vyKMS:29.78,mMsun:3.0e-6,color:'#60a5fa'}), // Earth
+      makeBody({xAU:5.2,yAU:0,vxKMS:0,vyKMS:13.07,mMsun:9.54e-4,color:'#a3e635'}) // Jupiter
+    ];
+    active=1; activeSel.value=1; syncInputs();
+  },
+  binaryProbe(){
+    bodies = [
+      makeBody({xAU:-0.5,yAU:0,vxKMS:0,vyKMS:-12,mMsun:0.8,color:'#5eead4'}),
+      makeBody({xAU:0.5,yAU:0,vxKMS:0,vyKMS:12,mMsun:0.8,color:'#f472b6'}),
+      makeBody({xAU:0,yAU:3,vxKMS:8,vyKMS:0,mMsun:1e-6,color:'#60a5fa'})
+    ]; active=2; activeSel.value=2; syncInputs();
+  },
+  figure8(){ // rough; true figure-8 needs specific initial conditions
+    bodies = [
+      makeBody({xAU:-0.97000436,yAU:0.24308753,vxKMS:0.466203685,vyKMS:0.43236573,mMsun:1,color:'#60a5fa'}),
+      makeBody({xAU:0.97000436,yAU:-0.24308753,vxKMS:0.466203685,vyKMS:0.43236573,mMsun:1,color:'#5eead4'}),
+      makeBody({xAU:0,yAU:0,vxKMS:-0.93240737,vyKMS:-0.86473146,mMsun:1,color:'#f472b6'})
+    ]; active=0; activeSel.value=0; syncInputs();
+  }
+};
+
+document.getElementById('presetSunEarthJupiter').addEventListener('click', presets.sunEarthJupiter);
+document.getElementById('presetBinaryProbe').addEventListener('click', presets.binaryProbe);
+document.getElementById('presetFigure8').addEventListener('click', presets.figure8);
+
+// Main loop
+let lastT = performance.now();
+function tick(now){
+  const realDt = (now - lastT)/1000; lastT = now;
+  // advance simulation by fixed steps according to UI time speed
+  if(running){
+    const simDays = daysPerSecond * realDt; // days advanced this frame
+    let simLeft = simDays * DAY; // seconds
+    const sub = 6; // substeps per frame for stability
+    const step = Math.min(fixedDt, simLeft/sub);
+    while(simLeft>0){ rk4Step(Math.min(step, simLeft)); simLeft -= step; }
+  }
+  draw(); renderLegend();
+  requestAnimationFrame(tick);
+}
+
+// Init
+presets.sunEarthJupiter();
+syncInputs();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
