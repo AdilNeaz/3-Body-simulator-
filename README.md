@@ -4,6 +4,9 @@ An interactive, browser-based simulation of the **three-body problem** with real
 
 **Live demo:** https://adilneaz.github.io/3-Body-simulator-/
 
+## Development Log
+See the full [Development Log](DEVELOPMENT_LOG.md) for a detailed timeline of how this project was built.
+
 ---
 
 ## ✨ Features
