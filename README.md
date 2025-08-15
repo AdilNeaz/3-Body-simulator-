@@ -48,3 +48,4 @@ You are free to use, modify, and distribute this project, provided credit is giv
 
 ## 📬 Contact
 Created by **Adil Neaz** — open to collaborations and academic discussion.
+Email: AdilF0rmalAcc0unt@gmail.com
